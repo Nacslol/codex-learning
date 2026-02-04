@@ -1,1 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simple Word-like Editor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #f1f3f6;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      color: #1f2933;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      background: #ffffff;
+      border-bottom: 1px solid #d9e2ec;
+      padding: 12px 20px;
+      z-index: 10;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .toolbar button,
+    .toolbar select {
+      border: 1px solid #cbd2d9;
+      background: #f8fafc;
+      color: #1f2933;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .toolbar button:hover,
+    .toolbar select:hover {
+      border-color: #94a3b8;
+    }
+
+    .toolbar button:active {
+      transform: translateY(1px);
+    }
+
+    .toolbar button.is-active {
+      background: #e0f2fe;
+      border-color: #38bdf8;
+      color: #0f172a;
+    }
+
+    .toolbar .spacer {
+      flex: 1 1 auto;
+    }
+
+    main {
+      flex: 1 1 auto;
+      padding: 32px 16px 64px;
+    }
+
+    .page {
+      background: #ffffff;
+      max-width: 820px;
+      margin: 0 auto;
+      min-height: 1000px;
+      padding: 72px 80px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+      border-radius: 12px;
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .page:focus {
+      outline: 2px solid #3b82f6;
+    }
+
+    .status {
+      text-align: center;
+      font-size: 12px;
+      color: #52616b;
+      padding: 8px 0 0;
+    }
+
+    @media (max-width: 900px) {
+      .page {
+        padding: 56px 40px;
+      }
+    }
+
+    @media (max-width: 600px) {
+      header {
+        padding: 12px;
+      }
+
+      .page {
+        padding: 40px 24px;
+        border-radius: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="toolbar" role="toolbar" aria-label="Formatting tools">
+      <button type="button" data-command="bold" aria-label="Bold"><strong>B</strong></button>
+      <button type="button" data-command="italic" aria-label="Italic"><em>I</em></button>
+      <button type="button" data-command="underline" aria-label="Underline"><span style="text-decoration: underline;">U</span></button>
+      <select id="headingSelect" aria-label="Heading level">
+        <option value="p">Normal</option>
+        <option value="h1">Heading 1</option>
+        <option value="h2">Heading 2</option>
+        <option value="h3">Heading 3</option>
+      </select>
+      <button type="button" data-command="insertUnorderedList" aria-label="Bulleted list">• List</button>
+      <button type="button" data-command="insertOrderedList" aria-label="Numbered list">1. List</button>
+      <div class="spacer"></div>
+      <button id="downloadBtn" type="button">Download</button>
+    </div>
+  </header>
+
+  <main>
+    <div
+      id="editor"
+      class="page"
+      contenteditable="true"
+      role="textbox"
+      aria-multiline="true"
+      aria-label="Document editor"
+    ></div>
+    <div class="status" id="status">Ready.</div>
+  </main>
+
+  <script>
+    const editor = document.getElementById("editor");
+    const status = document.getElementById("status");
+    const headingSelect = document.getElementById("headingSelect");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const STORAGE_KEY = "word_like_editor_content_v1";
+    const SAVE_DELAY = 400;
+    let saveTimer;
+    const toolbarButtons = Array.from(
+      document.querySelectorAll(".toolbar button[data-command]")
+    );
+    const commandButtons = new Map(
+      toolbarButtons.map((button) => [button.dataset.command, button])
+    );
+
+    const setStatus = (message) => {
+      status.textContent = message;
+    };
+
+    const applyCommand = (command) => {
+      editor.focus();
+      document.execCommand(command, false, null);
+    };
+
+    const applyHeading = (value) => {
+      editor.focus();
+      document.execCommand("formatBlock", false, value);
+    };
+
+    const saveContent = (message = "Saved locally.") => {
+      localStorage.setItem(STORAGE_KEY, editor.innerHTML);
+      setStatus(message);
+    };
+
+    const scheduleSave = () => {
+      setStatus("Saving...");
+      window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => {
+        saveContent();
+      }, SAVE_DELAY);
+    };
+
+    const loadContent = () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored && stored.trim().length > 0) {
+        editor.innerHTML = stored;
+        setStatus("Loaded saved document.");
+      } else {
+        editor.innerHTML =
+          "<h1>Your Document Title</h1><p>Start writing here...</p>";
+        setStatus("New document ready.");
+      }
+    };
+
+    const updateToolbarState = () => {
+      ["bold", "italic", "underline", "insertUnorderedList", "insertOrderedList"]
+        .forEach((command) => {
+          const button = commandButtons.get(command);
+          if (!button) {
+            return;
+          }
+          button.classList.toggle("is-active", document.queryCommandState(command));
+        });
+
+      const blockValue = document.queryCommandValue("formatBlock");
+      const currentBlock = typeof blockValue === "string"
+        ? blockValue.replace(/[<>]/g, "").toLowerCase()
+        : "";
+      if (["h1", "h2", "h3"].includes(currentBlock)) {
+        headingSelect.value = currentBlock;
+      } else {
+        headingSelect.value = "p";
+      }
+    };
+
+    toolbarButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        applyCommand(btn.dataset.command);
+        updateToolbarState();
+        scheduleSave();
+      });
+    });
+
+    headingSelect.addEventListener("change", (event) => {
+      applyHeading(event.target.value);
+      headingSelect.value = "p";
+      updateToolbarState();
+      scheduleSave();
+    });
+
+    editor.addEventListener("input", () => {
+      scheduleSave();
+    });
+
+    document.addEventListener("selectionchange", () => {
+      if (document.activeElement === editor) {
+        updateToolbarState();
+      }
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      const exportMarkup = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exported Document</title>
+  <style>
+    :root {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: #1f2933;
+    }
+    body {
+      margin: 0;
+      padding: 40px;
+      background: #f1f3f6;
+    }
+    .page {
+      background: #ffffff;
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 72px 80px;
+      line-height: 1.7;
+      font-size: 16px;
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">${editor.innerHTML}</div>
+</body>
+</html>`;
+      const blob = new Blob([exportMarkup], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "document.html";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    });
+
+    loadContent();
+    updateToolbarState();
+  </script>
+</body>
+</html>
 
